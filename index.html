@@ -66,7 +66,7 @@
       border-radius: 6px;
       padding: 24px;
       text-align: center;
-      margin-bottom: 16px;
+      margin-bottom: 8px;
       font-size: 0.9rem;
       background: #fafafa;
       transition: border-color 0.2s, background 0.2s;
@@ -75,6 +75,18 @@
     .dropzone.dragover {
       border-color: #0077ff;
       background: #e8f2ff;
+    }
+
+    .file-info {
+      font-size: 0.85rem;
+      color: #333;
+      text-align: center;
+      min-height: 18px;
+      margin-bottom: 8px;
+    }
+
+    .file-info span {
+      font-weight: 600;
     }
 
     textarea {
@@ -179,6 +191,13 @@
       margin-left: 8px;
     }
 
+    .results-actions {
+      margin-top: 8px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
     @media (max-width: 600px) {
       .actions {
         flex-direction: column;
@@ -189,6 +208,10 @@
         width: 100%;
         text-align: center;
       }
+
+      .results-actions {
+        flex-direction: column;
+      }
     }
   </style>
 </head>
@@ -198,7 +221,7 @@
       <h1>XML → IP CSV Converter</h1>
       <p>
         Upload / drag &amp; drop / paste XML berisi tag <code>&lt;definition&gt;</code> (Base64 + PHP serialize),
-        lalu konversi ke daftar IP per-satuan dan download sebagai CSV.
+        lalu konversi ke daftar IP per-satuan dan download sebagai CSV atau copy langsung ke clipboard.
       </p>
 
       <div class="section-title">1. Input XML</div>
@@ -208,6 +231,7 @@
           Drag &amp; drop file XML di sini<br />
           <span style="font-size: 0.8rem; color: #666;">(prioritas tertinggi jika digunakan)</span>
         </div>
+        <div id="fileInfo" class="file-info"></div>
       </div>
 
       <div class="input-group">
@@ -231,6 +255,7 @@
       <div class="actions">
         <button id="convertBtn">Convert to CSV</button>
         <button id="downloadBtn" disabled>Download CSV</button>
+        <button id="copyBtn" disabled>Copy hasil ke Clipboard</button>
         <span id="loadingIndicator" class="status info"></span>
       </div>
 
@@ -241,6 +266,12 @@
           Ditemukan <span id="ipCount">0</span> IP unik
           <span class="badge" id="sourceInfo"></span>
         </div>
+
+        <div class="results-actions">
+          <!-- tombol copy kedua (opsional, dekat tabel) bisa ditambah kalau mau;
+               sekarang kita pakai yang di bar utama saja -->
+        </div>
+
         <div class="results-wrapper">
           <table>
             <thead>
@@ -262,15 +293,19 @@
       const xmlTextarea = document.getElementById('xmlTextarea');
       const convertBtn = document.getElementById('convertBtn');
       const downloadBtn = document.getElementById('downloadBtn');
+      const copyBtn = document.getElementById('copyBtn');
       const statusMessage = document.getElementById('statusMessage');
       const loadingIndicator = document.getElementById('loadingIndicator');
       const resultsSection = document.getElementById('resultsSection');
       const resultsBody = document.getElementById('resultsBody');
       const ipCountEl = document.getElementById('ipCount');
       const sourceInfoEl = document.getElementById('sourceInfo');
+      const fileInfoEl = document.getElementById('fileInfo');
 
       let droppedFileContent = null;
       let uploadedFileContent = null;
+      let droppedFileName = null;
+      let uploadedFileName = null;
       let lastGeneratedIps = [];
 
       const MAX_EXPANDED_IPS = 1_000_000; // safety guard
@@ -289,7 +324,19 @@
         resultsSection.style.display = 'none';
         ipCountEl.textContent = '0';
         downloadBtn.disabled = true;
+        copyBtn.disabled = true;
         lastGeneratedIps = [];
+      }
+
+      function updateFileInfo(name, sourceLabel) {
+        if (!name) {
+          fileInfoEl.textContent = '';
+          return;
+        }
+        fileInfoEl.innerHTML =
+          'File terpilih (' + sourceLabel + '): <span>' +
+          name +
+          '</span><br/>Klik <strong>Convert to CSV</strong> untuk melanjutkan.';
       }
 
       // Drag & drop handlers
@@ -312,14 +359,18 @@
           setStatus('Tidak ada file yang terdeteksi saat drop.', 'error');
           return;
         }
-        if (!file.type && !file.name.toLowerCase().endsWith('.xml')) {
-          // masih boleh, tapi kasih info
-          setStatus('File terdeteksi, mencoba membaca sebagai XML...', 'info');
-        }
         const reader = new FileReader();
         reader.onload = function (ev) {
           droppedFileContent = ev.target.result;
-          setStatus('File dari drag & drop sudah dimuat. Siap di-convert.', 'success');
+          droppedFileName = file.name;
+          // Drop punya prioritas, clear upload info
+          uploadedFileContent = null;
+          uploadedFileName = null;
+          updateFileInfo(droppedFileName, 'drag & drop');
+          setStatus(
+            'File "' + droppedFileName + '" dari drag & drop sudah dimuat. Klik Convert to CSV untuk melanjutkan.',
+            'success'
+          );
         };
         reader.onerror = function () {
           setStatus('Gagal membaca file yang di-drop.', 'error');
@@ -331,13 +382,22 @@
       fileInput.addEventListener('change', function () {
         const file = fileInput.files && fileInput.files[0];
         uploadedFileContent = null;
+        uploadedFileName = null;
         if (!file) {
           return;
         }
         const reader = new FileReader();
         reader.onload = function (ev) {
           uploadedFileContent = ev.target.result;
-          setStatus('File upload sudah dimuat. Siap di-convert.', 'success');
+          uploadedFileName = file.name;
+          // Hanya update file info kalau tidak ada dropped file (drop tetap prioritas)
+          if (!droppedFileContent) {
+            updateFileInfo(uploadedFileName, 'upload');
+          }
+          setStatus(
+            'File "' + uploadedFileName + '" dari upload sudah dimuat. Klik Convert to CSV untuk melanjutkan.',
+            'success'
+          );
         };
         reader.onerror = function () {
           setStatus('Gagal membaca file upload.', 'error');
@@ -353,13 +413,16 @@
 
         let xmlSource = null;
         let sourceLabel = '';
+        let fileName = '';
 
         if (droppedFileContent) {
           xmlSource = droppedFileContent;
           sourceLabel = 'Drag & drop file';
+          fileName = droppedFileName || '';
         } else if (uploadedFileContent) {
           xmlSource = uploadedFileContent;
           sourceLabel = 'File upload';
+          fileName = uploadedFileName || '';
         } else {
           const text = xmlTextarea.value.trim();
           if (text) {
@@ -371,6 +434,10 @@
         if (!xmlSource) {
           setStatus('Tidak ada input XML. Gunakan drag & drop, upload, atau paste di textarea.', 'error');
           return;
+        }
+
+        if (!fileName && sourceLabel === 'Textarea (paste)') {
+          updateFileInfo(null, '');
         }
 
         setLoading('Processing...');
@@ -386,7 +453,7 @@
             }
             lastGeneratedIps = ips;
             renderResults(ips, sourceLabel);
-            setStatus('Konversi berhasil. CSV siap di-download.', 'success');
+            setStatus('Konversi berhasil. CSV siap di-download atau copy hasil ke clipboard.', 'success');
             setLoading('');
           } catch (err) {
             console.error(err);
@@ -416,6 +483,51 @@
         URL.revokeObjectURL(url);
       });
 
+      // Copy to clipboard handler
+      copyBtn.addEventListener('click', function () {
+        if (!lastGeneratedIps || lastGeneratedIps.length === 0) {
+          return;
+        }
+        // Format: cocok untuk paste langsung ke Excel (1 kolom)
+        const header = 'IP Address';
+        const text = [header].concat(lastGeneratedIps).join('\n');
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text)
+            .then(function () {
+              setStatus('Hasil sudah disalin ke clipboard. Paste langsung ke Excel / editor favoritmu.', 'success');
+            })
+            .catch(function (err) {
+              console.warn('Clipboard API gagal, fallback ke textarea hidden.', err);
+              fallbackCopyText(text);
+            });
+        } else {
+          fallbackCopyText(text);
+        }
+      });
+
+      function fallbackCopyText(text) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try {
+          const ok = document.execCommand('copy');
+          if (ok) {
+            setStatus('Hasil sudah disalin ke clipboard (fallback mode).', 'success');
+          } else {
+            setStatus('Gagal menyalin ke clipboard. Tapi kamu bisa select & copy manual dari tabel.', 'error');
+          }
+        } catch (e) {
+          setStatus('Gagal menyalin ke clipboard. Tapi kamu bisa select & copy manual dari tabel.', 'error');
+        }
+        document.body.removeChild(ta);
+      }
+
       function renderResults(ips, sourceLabel) {
         resultsBody.innerHTML = '';
         ips.forEach(ip => {
@@ -429,6 +541,7 @@
         sourceInfoEl.textContent = sourceLabel || 'Unknown source';
         resultsSection.style.display = 'block';
         downloadBtn.disabled = false;
+        copyBtn.disabled = false;
       }
 
       // Parsing pipeline
@@ -572,7 +685,6 @@
         }
 
         const value = readValue();
-        // ignore trailing whitespace
         return value;
       }
 
