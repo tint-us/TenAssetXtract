@@ -80,7 +80,7 @@ Misal struktur direktori:
   - `/var/www/ip-converter/index.html`
 
 Contoh konfigurasi server block:
-
+```
 server {
     listen 80;
     server_name ip-converter.local;
@@ -92,6 +92,7 @@ server {
         try_files $uri $uri/ =404;
     }
 }
+```
 
 Langkah:
 
@@ -121,7 +122,7 @@ Struktur direktori:
 - `/var/www/ip-converter/index.html`
 
 Contoh VirtualHost:
-
+```
 <VirtualHost *:80>
     ServerName ip-converter.local
     DocumentRoot /var/www/ip-converter
@@ -135,24 +136,24 @@ Contoh VirtualHost:
     ErrorLog ${APACHE_LOG_DIR}/ip-converter-error.log
     CustomLog ${APACHE_LOG_DIR}/ip-converter-access.log combined
 </VirtualHost>
-
+```
 Langkah:
 
 1. Simpan sebagai `/etc/apache2/sites-available/ip-converter.conf`
 2. Enable site dan reload:
-
+```
    a2ensite ip-converter.conf
    apachectl configtest
    systemctl reload apache2
-
+```
 3. Tambah di `/etc/hosts`:
-
+```
    127.0.0.1   ip-converter.local
-
+```
 4. Akses:
-
+```
    http://ip-converter.local
-
+```
 ---
 
 ## Deployment via Docker
