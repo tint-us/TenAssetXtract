@@ -228,11 +228,11 @@ CMD ["nginx", "-g", "daemon off;"]
 
 Di folder yang berisi `index.html` dan `Dockerfile`, jalankan:
 ```
-docker build -t ip-xml-converter .
+docker build -t tenassetxtract .
 ```
 ### Run Container
 ```
-docker run --rm -p 8080:80 --name ip-xml-converter ip-xml-converter
+docker run --rm -p 8080:80 --name tenassetxtract tenassetxtract
 ```
 Lalu akses di browser:
 ```
@@ -247,8 +247,8 @@ Buat file `docker-compose.yml`:
 version: "3.8"
 
 services:
-  ip-xml-converter:
-    image: ip-xml-converter
+  tenassetxtract:
+    image: tenassetxtract
     build:
       context: .
       dockerfile: Dockerfile
